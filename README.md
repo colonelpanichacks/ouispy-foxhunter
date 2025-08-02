@@ -1,5 +1,7 @@
 # OUI-SPY FOXHUNT
 
+![OUI-SPY](ouispy.png)
+
 Precision BLE proximity tracker for radio direction finding with real-time audio feedback.
 
 ## Hardware
