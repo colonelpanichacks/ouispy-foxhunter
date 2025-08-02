@@ -1,4 +1,4 @@
-# OUI-SPY FOXHUNT
+# OUI-SPY FOXHUNTER
 
 ![OUI-SPY](ouispy.png)
 
