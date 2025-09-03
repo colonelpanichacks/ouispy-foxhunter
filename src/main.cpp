@@ -48,15 +48,9 @@ unsigned long beepStartTime = 0;
 // Serial output synchronization - avoid concurrent writes
 volatile bool newTargetDetected = false;
 
-// RSSI-based timing (milliseconds between beeps) - START AT 3 SECONDS
-// Ultra strong (-20 to -40): 3000ms to 1000ms (3s to 1s)
-// Strong signal (-40 to -55): 1000ms to 500ms (1s to 0.5s)
-// Medium signal (-55 to -70): 500ms to 200ms (0.5s to 0.2s)
-// Weak signal (-70 to -85): 200ms to 100ms (0.2s to 0.1s)
-// Very weak (-85 to -95): 100ms to 50ms (0.1s to 0.05s)
-// Ultra weak (-95+): 50ms (LIGHTNING FAST)
+
 int calculateBeepInterval(int rssi) {
-    // REAL-TIME foxhunting intervals - INSANELY RESPONSIVE
+    // REAL-TIME foxhunting intervals
     // RSSI ranges: -95 (very weak) to -30 (very strong)
     if (rssi >= -35) {
         return map(rssi, -35, -25, 25, 10); // 25ms to 10ms - INSANE SPEED
