@@ -39,6 +39,11 @@ bool targetDetected = false;
 int currentRSSI = -100;
 unsigned long lastTargetSeen = 0;
 bool firstDetection = true;
+bool sessionFirstDetection = true; // Only beep once per hunting session
+
+// Non-blocking beep state
+bool beepActive = false;
+unsigned long beepStartTime = 0;
 
 // Serial output synchronization - avoid concurrent writes
 volatile bool newTargetDetected = false;
@@ -51,20 +56,22 @@ volatile bool newTargetDetected = false;
 // Very weak (-85 to -95): 100ms to 50ms (0.1s to 0.05s)
 // Ultra weak (-95+): 50ms (LIGHTNING FAST)
 int calculateBeepInterval(int rssi) {
-    // Map RSSI to beep intervals: 5 seconds (weak) to 100ms (strong)
+    // REAL-TIME foxhunting intervals - INSANELY RESPONSIVE
     // RSSI ranges: -95 (very weak) to -30 (very strong)
-    if (rssi >= -40) {
-        return map(rssi, -40, -30, 1000, 100); // 1s to 100ms for very strong signals
-    } else if (rssi >= -50) {
-        return map(rssi, -50, -40, 2000, 1000); // 2s to 1s
-    } else if (rssi >= -60) {
-        return map(rssi, -60, -50, 3000, 2000); // 3s to 2s
-    } else if (rssi >= -70) {
-        return map(rssi, -70, -60, 4000, 3000); // 4s to 3s
-    } else if (rssi >= -80) {
-        return map(rssi, -80, -70, 4500, 4000); // 4.5s to 4s
+    if (rssi >= -35) {
+        return map(rssi, -35, -25, 25, 10); // 25ms to 10ms - INSANE SPEED
+    } else if (rssi >= -45) {
+        return map(rssi, -45, -35, 75, 25); // 75ms to 25ms - MACHINE GUN
+    } else if (rssi >= -55) {
+        return map(rssi, -55, -45, 150, 75); // 150ms to 75ms - ULTRA FAST
+    } else if (rssi >= -65) {
+        return map(rssi, -65, -55, 250, 150); // 250ms to 150ms - VERY FAST
+    } else if (rssi >= -75) {
+        return map(rssi, -75, -65, 400, 250); // 400ms to 250ms - FAST
+    } else if (rssi >= -85) {
+        return map(rssi, -85, -75, 600, 400); // 600ms to 400ms - MEDIUM
     } else {
-        return 5000; // 5 seconds for very weak signals (-80 and below)
+        return 800; // 800ms max for very weak signals (-85 and below)
     }
 }
 
@@ -96,16 +103,34 @@ void ascendingBeeps() {
     delay(500);
 }
 
-void proximityBeep() {
-    tone(BUZZER_PIN, 1000, 100);  // 1kHz tone for 100ms
+void startProximityBeep() {
+    if (!beepActive) {
+        ledcWriteTone(0, 1000);       // 1kHz tone
+        ledcWrite(0, BUZZER_DUTY);    // Turn on buzzer
+        beepActive = true;
+        beepStartTime = millis();
+    }
+}
+
+void stopProximityBeep() {
+    if (beepActive) {
+        ledcWrite(0, 0);              // Turn off buzzer
+        beepActive = false;
+    }
 }
 
 void handleProximityBeeping() {
     unsigned long currentTime = millis();
-    int beepInterval = calculateBeepInterval(currentRSSI);
     
-    if (currentTime - lastBeepTime >= beepInterval) {
-        proximityBeep();
+    // Handle beep duration (100ms on)
+    if (beepActive && (currentTime - beepStartTime >= 100)) {
+        stopProximityBeep();
+    }
+    
+    // Handle beep intervals
+    int beepInterval = calculateBeepInterval(currentRSSI);
+    if (!beepActive && (currentTime - lastBeepTime >= beepInterval)) {
+        startProximityBeep();
         lastBeepTime = currentTime;
     }
 }
@@ -142,6 +167,7 @@ void loadConfiguration() {
     preferences.end();
     
     if (targetMAC.length() > 0) {
+        targetMAC.toUpperCase(); // Ensure consistent case for comparison
         Serial.println("Configuration loaded from NVS");
         Serial.println("Target MAC: " + targetMAC);
     }
@@ -600,6 +626,7 @@ void startConfigMode() {
         if (request->hasParam("targetMAC", true)) {
             targetMAC = request->getParam("targetMAC", true)->value();
             targetMAC.trim();
+            targetMAC.toUpperCase(); // Ensure consistent case for comparison
             
             Serial.println("Received target MAC: " + targetMAC);
             saveConfiguration();
@@ -727,6 +754,10 @@ void startTrackingMode() {
     
     currentMode = TRACKING_MODE;
     
+    // Reset session detection flag for new hunting session
+    sessionFirstDetection = true;
+    firstDetection = true;
+    
     // Stop the web server
     server.end();
     
@@ -849,21 +880,38 @@ void loop() {
         if (newTargetDetected) {
             newTargetDetected = false;
             
-            // Only play three same-tone beeps on first detection
-            if (firstDetection) {
+            // Only play three same-tone beeps on FIRST detection of hunting session
+            if (sessionFirstDetection) {
                 threeSameToneBeeps();
-                firstDetection = false;
+                sessionFirstDetection = false;
                 Serial.println("TARGET ACQUIRED!");
+            } else if (firstDetection) {
+                // Silent reacquisition after loss
+                firstDetection = false;
+                Serial.println("TARGET REACQUIRED!");
             }
         }
         
         // Handle proximity beeping
         if (targetDetected && (currentTime - lastTargetSeen < 5000)) { // Target seen within last 5 seconds
             handleProximityBeeping();
+            
+            // Print RSSI for visual fox hunting feedback (reduced frequency for real-time performance)
+            static unsigned long lastRSSIPrint = 0;
+            int printInterval = 2000; // Fixed 2-second intervals - less serial spam
+            
+            if (currentTime - lastRSSIPrint >= printInterval) {
+                Serial.print("RSSI: ");
+                Serial.print(currentRSSI);
+                Serial.println(" dBm");
+                lastRSSIPrint = currentTime;
+            }
         } else if (currentTime - lastTargetSeen >= 5000) {
             // Target lost
             targetDetected = false;
             firstDetection = true; // Reset for next detection
+            stopProximityBeep(); // Ensure beep is off when target lost
+            Serial.println("TARGET LOST - Searching...");
         }
         
         return;
