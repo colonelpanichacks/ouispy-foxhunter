@@ -11,6 +11,7 @@
 #define BUZZER_PIN 3
 #define BUZZER_FREQ 2000
 #define BUZZER_DUTY 127
+#define LED_PIN 21
 
 // Network configuration
 const char* AP_SSID = "snoopuntothem";
@@ -41,6 +42,10 @@ unsigned long lastTargetSeen = 0;
 bool firstDetection = true;
 bool sessionFirstDetection = true; // Only beep once per hunting session
 
+// Persistent settings
+bool buzzerEnabled = true;
+bool ledEnabled = true;
+
 // Non-blocking beep state
 bool beepActive = false;
 unsigned long beepStartTime = 0;
@@ -69,29 +74,62 @@ int calculateBeepInterval(int rssi) {
     }
 }
 
+// LED control functions (inverted logic for Xiao ESP32-S3)
+void ledOn() {
+    if (ledEnabled) {
+        digitalWrite(LED_PIN, LOW);  // LOW = LED ON for Xiao ESP32-S3
+    }
+}
+
+void ledOff() {
+    if (ledEnabled) {
+        digitalWrite(LED_PIN, HIGH); // HIGH = LED OFF for Xiao ESP32-S3
+    }
+}
+
 // Buzzer functions
 void singleBeep() {
-    ledcWrite(0, BUZZER_DUTY);
+    if (buzzerEnabled) {
+        ledcWrite(0, BUZZER_DUTY);
+    }
+    ledOn();
     delay(100);
-    ledcWrite(0, 0);
+    if (buzzerEnabled) {
+        ledcWrite(0, 0);
+    }
+    ledOff();
 }
 
 void ascendingBeeps() {
     // Ready signal - 2 fast ascending beeps with close melodic notes
-    ledcWriteTone(0, 1900);
-    ledcWrite(0, BUZZER_DUTY);
+    if (buzzerEnabled) {
+        ledcWriteTone(0, 1900);
+        ledcWrite(0, BUZZER_DUTY);
+    }
+    ledOn();
     delay(150);
-    ledcWrite(0, 0);
+    if (buzzerEnabled) {
+        ledcWrite(0, 0);
+    }
+    ledOff();
     delay(50);
     
-    ledcWriteTone(0, 2200);
-    ledcWrite(0, BUZZER_DUTY);
+    if (buzzerEnabled) {
+        ledcWriteTone(0, 2200);
+        ledcWrite(0, BUZZER_DUTY);
+    }
+    ledOn();
     delay(150);
-    ledcWrite(0, 0);
+    if (buzzerEnabled) {
+        ledcWrite(0, 0);
+    }
+    ledOff();
     
     // Reset to normal frequency and ENSURE buzzer is OFF
-    ledcWriteTone(0, BUZZER_FREQ);
-    ledcWrite(0, 0);  // Make sure buzzer is completely off
+    if (buzzerEnabled) {
+        ledcWriteTone(0, BUZZER_FREQ);
+        ledcWrite(0, 0);  // Make sure buzzer is completely off
+    }
     
     // Add delay to prevent interference with proximity beeps
     delay(500);
@@ -99,8 +137,11 @@ void ascendingBeeps() {
 
 void startProximityBeep() {
     if (!beepActive) {
-        ledcWriteTone(0, 1000);       // 1kHz tone
-        ledcWrite(0, BUZZER_DUTY);    // Turn on buzzer
+        if (buzzerEnabled) {
+            ledcWriteTone(0, 1000);       // 1kHz tone
+            ledcWrite(0, BUZZER_DUTY);    // Turn on buzzer
+        }
+        ledOn();                          // Turn on LED
         beepActive = true;
         beepStartTime = millis();
     }
@@ -108,7 +149,10 @@ void startProximityBeep() {
 
 void stopProximityBeep() {
     if (beepActive) {
-        ledcWrite(0, 0);              // Turn off buzzer
+        if (buzzerEnabled) {
+            ledcWrite(0, 0);              // Turn off buzzer
+        }
+        ledOff();                         // Turn off LED
         beepActive = false;
     }
 }
@@ -116,12 +160,12 @@ void stopProximityBeep() {
 void handleProximityBeeping() {
     unsigned long currentTime = millis();
     
-    // Handle beep duration (100ms on)
+    // ULTRA-REACTIVE: Handle beep duration (100ms on) - LED perfectly synced
     if (beepActive && (currentTime - beepStartTime >= 100)) {
         stopProximityBeep();
     }
     
-    // Handle beep intervals
+    // LIGHTNING-FAST: Handle beep intervals with instant LED response
     int beepInterval = calculateBeepInterval(currentRSSI);
     if (!beepActive && (currentTime - lastBeepTime >= beepInterval)) {
         startProximityBeep();
@@ -132,16 +176,24 @@ void handleProximityBeeping() {
 void threeSameToneBeeps() {
     // Three beeps at same tone for initial detection
     for (int i = 0; i < 3; i++) {
-        ledcWriteTone(0, 2000); // Same tone for all three
-        ledcWrite(0, BUZZER_DUTY);
+        if (buzzerEnabled) {
+            ledcWriteTone(0, 2000); // Same tone for all three
+            ledcWrite(0, BUZZER_DUTY);
+        }
+        ledOn();
         delay(100);
-        ledcWrite(0, 0);
+        if (buzzerEnabled) {
+            ledcWrite(0, 0);
+        }
+        ledOff();
         delay(50);
     }
     
     // Reset to normal frequency and ENSURE buzzer is OFF
-    ledcWriteTone(0, BUZZER_FREQ);
-    ledcWrite(0, 0);
+    if (buzzerEnabled) {
+        ledcWriteTone(0, BUZZER_FREQ);
+        ledcWrite(0, 0);
+    }
     
     // Add delay to prevent interference with proximity beeps
     delay(500);
@@ -151,6 +203,8 @@ void threeSameToneBeeps() {
 void saveConfiguration() {
     preferences.begin("tracker", false);
     preferences.putString("targetMAC", targetMAC);
+    preferences.putBool("buzzerEnabled", buzzerEnabled);
+    preferences.putBool("ledEnabled", ledEnabled);
     preferences.end();
     Serial.println("Configuration saved to NVS");
 }
@@ -158,6 +212,8 @@ void saveConfiguration() {
 void loadConfiguration() {
     preferences.begin("tracker", true);
     targetMAC = preferences.getString("targetMAC", "");
+    buzzerEnabled = preferences.getBool("buzzerEnabled", true);
+    ledEnabled = preferences.getBool("ledEnabled", true);
     preferences.end();
     
     if (targetMAC.length() > 0) {
@@ -165,6 +221,8 @@ void loadConfiguration() {
         Serial.println("Configuration loaded from NVS");
         Serial.println("Target MAC: " + targetMAC);
     }
+    Serial.println("Buzzer enabled: " + String(buzzerEnabled ? "Yes" : "No"));
+    Serial.println("LED enabled: " + String(ledEnabled ? "Yes" : "No"));
 }
 
 String getASCIIArt() {
@@ -475,6 +533,32 @@ String generateConfigHTML() {
             border-color: #4ecdc4;
             box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.2);
         }
+        .toggle-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .toggle-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.02);
+        }
+        .toggle-item input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            accent-color: #4ecdc4;
+            cursor: pointer;
+        }
+        .toggle-label {
+            font-weight: 500;
+            color: #ffffff;
+            cursor: pointer;
+            user-select: none;
+        }
         .help-text { 
             font-size: 13px; 
             color: #a0a0a0; 
@@ -534,7 +618,23 @@ String generateConfigHTML() {
                     Format: XX:XX:XX:XX:XX:XX (17 characters with colons)<br>
                     Beep intervals: 50ms (LIGHTNING) to 10s (PAINFULLY SLOW)
                 </div>
-    </div>
+            </div>
+            
+            <div class="section">
+                <h3>Audio & Visual Settings</h3>
+                <div class="toggle-container">
+                    <div class="toggle-item">
+                        <input type="checkbox" id="buzzerEnabled" name="buzzerEnabled" )html" + String(buzzerEnabled ? "checked" : "") + R"html(>
+                        <label class="toggle-label" for="buzzerEnabled">Enable Buzzer</label>
+                        <div class="help-text" style="margin-top: 0;">Audio feedback for target proximity</div>
+                    </div>
+                    <div class="toggle-item">
+                        <input type="checkbox" id="ledEnabled" name="ledEnabled" )html" + String(ledEnabled ? "checked" : "") + R"html(>
+                        <label class="toggle-label" for="ledEnabled">Enable LED Blinking</label>
+                        <div class="help-text" style="margin-top: 0;">Orange LED blinks with same cadence as buzzer</div>
+                    </div>
+                </div>
+            </div>
             
             <div class="button-container">
                 <button type="submit">Save Configuration & Start Scanning</button>
@@ -622,7 +722,13 @@ void startConfigMode() {
             targetMAC.trim();
             targetMAC.toUpperCase(); // Ensure consistent case for comparison
             
+            // Process buzzer and LED toggles
+            buzzerEnabled = request->hasParam("buzzerEnabled", true);
+            ledEnabled = request->hasParam("ledEnabled", true);
+            
             Serial.println("Received target MAC: " + targetMAC);
+            Serial.println("Buzzer enabled: " + String(buzzerEnabled ? "Yes" : "No"));
+            Serial.println("LED enabled: " + String(ledEnabled ? "Yes" : "No"));
             saveConfiguration();
             
             String responseHTML = R"html(
@@ -794,6 +900,11 @@ void setup() {
     // Setup buzzer
     ledcSetup(0, BUZZER_FREQ, 8);
     ledcAttachPin(BUZZER_PIN, 0);
+    
+    // Setup LED (inverted logic - HIGH = OFF for Xiao ESP32-S3)
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, HIGH);
+    
     singleBeep(); // Startup test beep
     
     // STEALTH MODE: Full MAC randomization
@@ -901,10 +1012,16 @@ void loop() {
                 lastRSSIPrint = currentTime;
             }
         } else if (currentTime - lastTargetSeen >= 5000) {
-            // Target lost
+            // Target lost - INSTANT LED OFF for maximum reactivity
             targetDetected = false;
             firstDetection = true; // Reset for next detection
             stopProximityBeep(); // Ensure beep is off when target lost
+            
+            // ULTRA-REACTIVE: Force LED off immediately when target lost
+            if (ledEnabled) {
+                digitalWrite(LED_PIN, HIGH); // LED OFF instantly
+            }
+            
             Serial.println("TARGET LOST - Searching...");
         }
         
