@@ -159,14 +159,16 @@ void stopProximityBeep() {
 
 void handleProximityBeeping() {
     unsigned long currentTime = millis();
+    int beepInterval = calculateBeepInterval(currentRSSI);
     
-    // ULTRA-REACTIVE: Handle beep duration (100ms on) - LED perfectly synced
-    if (beepActive && (currentTime - beepStartTime >= 100)) {
+    // ULTRA-REACTIVE: Handle beep duration - LED perfectly synced
+    // Beep duration scales with interval: 50% of interval, minimum 10ms, maximum 100ms
+    int beepDuration = constrain(beepInterval / 2, 10, 100);
+    if (beepActive && (currentTime - beepStartTime >= beepDuration)) {
         stopProximityBeep();
     }
     
     // LIGHTNING-FAST: Handle beep intervals with instant LED response
-    int beepInterval = calculateBeepInterval(currentRSSI);
     if (!beepActive && (currentTime - lastBeepTime >= beepInterval)) {
         startProximityBeep();
         lastBeepTime = currentTime;
