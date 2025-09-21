@@ -6,12 +6,14 @@ Precision BLE proximity tracker for radio direction finding with real-time audio
 
 ## Hardware
 
-**OUI-SPY Board** - Available on [Tindie](https://www.tindie.com)
+**OUI-SPY Board** - Available on [ColonelPanic.tech](https://colonelpanic.tech)
 - ESP32-S3 based tracking system
 - Integrated buzzer and power management
 - Ready-to-use, no additional components required
 
 **Alternative:** Standard ESP32-S3 with external buzzer on GPIO3
+
+**Xiao ESP32-S3:** Onboard LED on GPIO21 (inverted logic)
 
 ## Quick Start
 
@@ -28,17 +30,23 @@ Precision BLE proximity tracker for radio direction finding with real-time audio
 - Persistent configuration storage
 - Automatic mode switching
 
-### Audio Feedback
-- Startup beep: Power-on confirmation
-- Ready signal: Two ascending beeps
-- Target acquired: Three same-tone beeps
-- Proximity beeps: Variable frequency based on signal strength
+### Audio & Visual Feedback
+- **Buzzer Control:** Independent enable/disable toggle
+- **LED Control:** Orange LED blinks with same cadence as buzzer
+- **Startup beep:** Power-on confirmation with LED flash
+- **Ready signal:** Two ascending beeps with LED synchronization
+- **Target acquired:** Three same-tone beeps with LED flashing
+- **Proximity feedback:** Variable frequency based on signal strength
+- **Persistent Settings:** Buzzer/LED preferences survive reboots
 
-### Proximity Indicators
-- **100ms intervals:** Very close (-30 to -40 dBm)
-- **1-2 second intervals:** Close (-40 to -60 dBm)
-- **3-4 second intervals:** Medium (-60 to -80 dBm)
-- **5 second intervals:** Far (-80+ dBm)
+### Ultra-Reactive Proximity Indicators
+- **10-25ms intervals:** INSANE SPEED (-35 to -25 dBm) - MACHINE GUN
+- **25-75ms intervals:** ULTRA FAST (-45 to -35 dBm) - LIGHTNING
+- **75-150ms intervals:** VERY FAST (-55 to -45 dBm) - RAPID FIRE
+- **150-250ms intervals:** FAST (-65 to -55 dBm) - QUICK
+- **250-400ms intervals:** MEDIUM (-75 to -65 dBm) - MODERATE
+- **400-600ms intervals:** SLOW (-85 to -75 dBm) - STEADY
+- **800ms intervals:** VERY SLOW (-85+ dBm) - PAINFULLY SLOW
 
 ## Installation
 
@@ -60,13 +68,15 @@ python3 -m platformio run --target upload
 2. Connect to `snoopuntothem` WiFi network
 3. Access web portal at `http://192.168.4.1`
 4. Enter target MAC address
-5. Configuration saves automatically
+5. Configure audio/visual settings (buzzer & LED toggles)
+6. Configuration saves automatically with persistent settings
 
 ### Tracking Mode
-1. BLE scanning starts with ready signal
-2. Target acquisition triggers three beeps
-3. Proximity beeps indicate distance
+1. BLE scanning starts with ready signal (audio + LED)
+2. Target acquisition triggers three beeps with LED flashing
+3. Proximity feedback indicates distance (buzzer + LED sync)
 4. Use directional antenna for triangulation
+5. LED turns off instantly when target lost
 
 ### Technical Details
 - **Scan parameters:** 16ms intervals, 95% duty cycle
@@ -78,9 +88,11 @@ python3 -m platformio run --target upload
 
 Clean, professional configuration portal with:
 - MAC address validation
+- **Audio & Visual Settings:** Independent buzzer and LED toggles
 - Configuration confirmation screen
 - 5-second automatic mode switch
 - Device reset functionality
+- **Persistent Settings:** Preferences survive reboots
 
 ## Serial Output
 
@@ -88,10 +100,13 @@ Clean, professional configuration portal with:
 ==============================
 === STARTING FOXHUNT TRACKING MODE ===
 Target MAC: 5e:9f:f9:eb:2e:23
+Buzzer enabled: Yes
+LED enabled: Yes
 ==============================
 
 FOXHUNT REALTIME tracking started!
 TARGET ACQUIRED!
+RSSI: -45 dBm
 ```
 
 ## Troubleshooting
@@ -112,9 +127,11 @@ TARGET ACQUIRED!
 
 - **Platform:** ESP32-S3
 - **BLE scanning:** Continuous, aggressive parameters
-- **Audio system:** PWM-based buzzer control
-- **Storage:** NVS flash memory
+- **Audio system:** PWM-based buzzer control (GPIO3)
+- **Visual system:** Onboard LED control (GPIO21, inverted logic)
+- **Storage:** NVS flash memory with persistent settings
 - **Power optimization:** Dual-core processing
+- **Response time:** Ultra-reactive with instant LED feedback
 
 ## License
 
