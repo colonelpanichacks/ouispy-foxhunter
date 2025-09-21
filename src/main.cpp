@@ -50,27 +50,38 @@ bool ledEnabled = true;
 bool beepActive = false;
 unsigned long beepStartTime = 0;
 
+// Solid mode for ultra-close targets
+bool solidMode = false;
+
 // Serial output synchronization - avoid concurrent writes
 volatile bool newTargetDetected = false;
 
 
 int calculateBeepInterval(int rssi) {
-    // REAL-TIME foxhunting intervals
-    // RSSI ranges: -95 (very weak) to -30 (very strong)
-    if (rssi >= -35) {
-        return map(rssi, -35, -25, 25, 10); // 25ms to 10ms - INSANE SPEED
-    } else if (rssi >= -45) {
-        return map(rssi, -45, -35, 75, 25); // 75ms to 25ms - MACHINE GUN
-    } else if (rssi >= -55) {
-        return map(rssi, -55, -45, 150, 75); // 150ms to 75ms - ULTRA FAST
-    } else if (rssi >= -65) {
-        return map(rssi, -65, -55, 250, 150); // 250ms to 150ms - VERY FAST
-    } else if (rssi >= -75) {
-        return map(rssi, -75, -65, 400, 250); // 400ms to 250ms - FAST
-    } else if (rssi >= -85) {
-        return map(rssi, -85, -75, 600, 400); // 600ms to 400ms - MEDIUM
+    // RESPONSIVE foxhunting intervals with defined spacing
+    // RSSI ranges: -95 (very weak) to -20 (solid mode)
+    
+    // ULTRA-CLOSE: Switch to solid LED when super close
+    if (rssi >= -25) {
+        solidMode = true;
+        return 0; // No interval needed - solid mode
     } else {
-        return 800; // 800ms max for very weak signals (-85 and below)
+        solidMode = false;
+        if (rssi >= -35) {
+            return map(rssi, -35, -25, 120, 60); // 120ms to 60ms - VERY FAST with defined gaps
+        } else if (rssi >= -45) {
+            return map(rssi, -45, -35, 200, 120); // 200ms to 120ms - FAST with clear spacing
+        } else if (rssi >= -55) {
+            return map(rssi, -55, -45, 300, 200); // 300ms to 200ms - MEDIUM-FAST with spacing
+        } else if (rssi >= -65) {
+            return map(rssi, -65, -55, 450, 300); // 450ms to 300ms - MEDIUM with defined gaps
+        } else if (rssi >= -75) {
+            return map(rssi, -75, -65, 650, 450); // 650ms to 450ms - MODERATE with clear spacing
+        } else if (rssi >= -85) {
+            return map(rssi, -85, -75, 900, 650); // 900ms to 650ms - SLOW with spacing
+        } else {
+            return 1200; // 1200ms max for very weak signals - SLOW but not painfully so
+        }
     }
 }
 
@@ -157,21 +168,37 @@ void stopProximityBeep() {
     }
 }
 
+void handleSolidMode() {
+    // ULTRA-CLOSE: Keep LED solid and buzzer on continuously
+    if (buzzerEnabled) {
+        ledcWriteTone(0, 1000);
+        ledcWrite(0, BUZZER_DUTY);
+    }
+    ledOn();
+}
+
 void handleProximityBeeping() {
     unsigned long currentTime = millis();
+    
+    // Check if we're in solid mode (ultra-close target)
     int beepInterval = calculateBeepInterval(currentRSSI);
     
-    // ULTRA-REACTIVE: Handle beep duration - LED perfectly synced
-    // Beep duration scales with interval: 50% of interval, minimum 10ms, maximum 100ms
-    int beepDuration = constrain(beepInterval / 2, 10, 100);
-    if (beepActive && (currentTime - beepStartTime >= beepDuration)) {
-        stopProximityBeep();
-    }
-    
-    // LIGHTNING-FAST: Handle beep intervals with instant LED response
-    if (!beepActive && (currentTime - lastBeepTime >= beepInterval)) {
-        startProximityBeep();
-        lastBeepTime = currentTime;
+    if (solidMode) {
+        // ULTRA-CLOSE: Solid LED and continuous buzzer - YOU'RE RIGHT ON IT!
+        handleSolidMode();
+    } else {
+        // NORMAL PROXIMITY: Standard beeping with LED sync
+        
+        // ULTRA-REACTIVE: Handle beep duration (100ms on) - LED perfectly synced
+        if (beepActive && (currentTime - beepStartTime >= 100)) {
+            stopProximityBeep();
+        }
+        
+        // LIGHTNING-FAST: Handle beep intervals with instant LED response
+        if (!beepActive && (currentTime - lastBeepTime >= beepInterval)) {
+            startProximityBeep();
+            lastBeepTime = currentTime;
+        }
     }
 }
 
