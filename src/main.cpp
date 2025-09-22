@@ -46,42 +46,32 @@ bool sessionFirstDetection = true; // Only beep once per hunting session
 bool buzzerEnabled = true;
 bool ledEnabled = true;
 
-// Non-blocking beep state
-bool beepActive = false;
-unsigned long beepStartTime = 0;
-
-// Solid mode for ultra-close targets
-bool solidMode = false;
+// Simple beep state
+bool isBeeping = false;
+unsigned long lastBeepStart = 0;
+unsigned long beepDuration = 50;  // 50ms beep duration for fast response
 
 // Serial output synchronization - avoid concurrent writes
 volatile bool newTargetDetected = false;
 
 
 int calculateBeepInterval(int rssi) {
-    // RESPONSIVE foxhunting intervals with defined spacing
-    // RSSI ranges: -95 (very weak) to -20 (solid mode)
-    
-    // ULTRA-CLOSE: Switch to solid LED when super close
-    if (rssi >= -25) {
-        solidMode = true;
-        return 0; // No interval needed - solid mode
+    // REAL-TIME foxhunting intervals
+    // RSSI ranges: -95 (very weak) to -30 (very strong)
+    if (rssi >= -35) {
+        return map(rssi, -35, -25, 25, 10); // 25ms to 10ms - INSANE SPEED
+    } else if (rssi >= -45) {
+        return map(rssi, -45, -35, 50, 25); // 50ms to 25ms - VERY FAST
+    } else if (rssi >= -55) {
+        return map(rssi, -55, -45, 100, 50); // 100ms to 50ms - FAST
+    } else if (rssi >= -65) {
+        return map(rssi, -65, -55, 200, 100); // 200ms to 100ms - MEDIUM
+    } else if (rssi >= -75) {
+        return map(rssi, -75, -65, 500, 200); // 500ms to 200ms - SLOW
+    } else if (rssi >= -85) {
+        return map(rssi, -85, -75, 1000, 500); // 1000ms to 500ms - VERY SLOW
     } else {
-        solidMode = false;
-        if (rssi >= -35) {
-            return map(rssi, -35, -25, 120, 60); // 120ms to 60ms - VERY FAST with defined gaps
-        } else if (rssi >= -45) {
-            return map(rssi, -45, -35, 200, 120); // 200ms to 120ms - FAST with clear spacing
-        } else if (rssi >= -55) {
-            return map(rssi, -55, -45, 300, 200); // 300ms to 200ms - MEDIUM-FAST with spacing
-        } else if (rssi >= -65) {
-            return map(rssi, -65, -55, 450, 300); // 450ms to 300ms - MEDIUM with defined gaps
-        } else if (rssi >= -75) {
-            return map(rssi, -75, -65, 650, 450); // 650ms to 450ms - MODERATE with clear spacing
-        } else if (rssi >= -85) {
-            return map(rssi, -85, -75, 900, 650); // 900ms to 650ms - SLOW with spacing
-        } else {
-            return 1200; // 1200ms max for very weak signals - SLOW but not painfully so
-        }
+        return 3000; // 3000ms max for very weak signals
     }
 }
 
@@ -136,9 +126,9 @@ void ascendingBeeps() {
     }
     ledOff();
     
-    // Reset to normal frequency and ENSURE buzzer is OFF
+    // Reset to proximity frequency and ENSURE buzzer is OFF
     if (buzzerEnabled) {
-        ledcWriteTone(0, BUZZER_FREQ);
+        ledcWriteTone(0, 1000);  // Set to 1kHz for consistency with proximity beeps
         ledcWrite(0, 0);  // Make sure buzzer is completely off
     }
     
@@ -146,67 +136,58 @@ void ascendingBeeps() {
     delay(500);
 }
 
-void startProximityBeep() {
-    if (!beepActive) {
-        if (buzzerEnabled) {
-            ledcWriteTone(0, 1000);       // 1kHz tone
-            ledcWrite(0, BUZZER_DUTY);    // Turn on buzzer
-        }
-        ledOn();                          // Turn on LED
-        beepActive = true;
-        beepStartTime = millis();
-    }
-}
-
-void stopProximityBeep() {
-    if (beepActive) {
-        if (buzzerEnabled) {
-            ledcWrite(0, 0);              // Turn off buzzer
-        }
-        ledOff();                         // Turn off LED
-        beepActive = false;
-    }
-}
-
-void handleSolidMode() {
-    // ULTRA-CLOSE: Keep LED solid and buzzer on continuously
-    if (buzzerEnabled) {
-        ledcWriteTone(0, 1000);
-        ledcWrite(0, BUZZER_DUTY);
-    }
-    ledOn();
-}
-
 void handleProximityBeeping() {
     unsigned long currentTime = millis();
-    
-    // Check if we're in solid mode (ultra-close target)
     int beepInterval = calculateBeepInterval(currentRSSI);
     
-    if (solidMode) {
-        // ULTRA-CLOSE: Solid LED and continuous buzzer - YOU'RE RIGHT ON IT!
-        handleSolidMode();
-    } else {
-        // NORMAL PROXIMITY: Standard beeping with LED sync
-        
-        // ULTRA-REACTIVE: Handle beep duration (100ms on) - LED perfectly synced
-        if (beepActive && (currentTime - beepStartTime >= 100)) {
-            stopProximityBeep();
+    // Ultra close - solid beep (continuous)
+    if (currentRSSI >= -25) {
+        if (buzzerEnabled) {
+            ledcWriteTone(0, 1000);
+            ledcWrite(0, BUZZER_DUTY);
         }
-        
-        // LIGHTNING-FAST: Handle beep intervals with instant LED response
-        if (!beepActive && (currentTime - lastBeepTime >= beepInterval)) {
-            startProximityBeep();
-            lastBeepTime = currentTime;
+        ledOn();
+        isBeeping = true;
+        Serial.println("DEBUG: Solid beep mode");
+        return;
+    }
+    
+    // Regular proximity beeping with aggressive timing
+    if (isBeeping) {
+        // Check if beep duration is over (50ms)
+        if (currentTime - lastBeepStart >= beepDuration) {
+            // Turn off beep
+            if (buzzerEnabled) {
+                ledcWrite(0, 0);
+            }
+            ledOff();
+            isBeeping = false;
+            Serial.println("DEBUG: Beep OFF");
+        }
+    } else {
+        // Check if it's time for next beep
+        if (currentTime - lastBeepStart >= beepInterval) {
+            // Start new beep
+            if (buzzerEnabled) {
+                ledcWriteTone(0, 1000);
+                ledcWrite(0, BUZZER_DUTY);
+            }
+            ledOn();
+            isBeeping = true;
+            lastBeepStart = currentTime;
+            Serial.print("DEBUG: Beep ON, RSSI: ");
+            Serial.print(currentRSSI);
+            Serial.print(", interval: ");
+            Serial.println(beepInterval);
         }
     }
 }
 
 void threeSameToneBeeps() {
-    // Three beeps at same tone for initial detection
+    // Three beeps at same tone for initial detection - using 1kHz for consistency
     for (int i = 0; i < 3; i++) {
         if (buzzerEnabled) {
-            ledcWriteTone(0, 2000); // Same tone for all three
+            ledcWriteTone(0, 1000); // Same 1kHz tone as proximity beeps
             ledcWrite(0, BUZZER_DUTY);
         }
         ledOn();
@@ -218,9 +199,8 @@ void threeSameToneBeeps() {
         delay(50);
     }
     
-    // Reset to normal frequency and ENSURE buzzer is OFF
+    // Ensure buzzer is OFF (frequency already at 1kHz)
     if (buzzerEnabled) {
-        ledcWriteTone(0, BUZZER_FREQ);
         ledcWrite(0, 0);
     }
     
@@ -871,6 +851,8 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
             // Set flags for main loop to handle
             targetDetected = true;
             newTargetDetected = true;
+            Serial.print("DEBUG: Target detected, RSSI: ");
+            Serial.println(currentRSSI);
         }
     }
 };
@@ -926,8 +908,8 @@ void setup() {
     Serial.println("Range: 5s (WEAK) to 100ms (STRONG)");
     Serial.println("Initializing...\n");
     
-    // Setup buzzer
-    ledcSetup(0, BUZZER_FREQ, 8);
+    // Setup buzzer - initialize to 1kHz for proximity beeps
+    ledcSetup(0, 1000, 8);  // 1kHz default frequency
     ledcAttachPin(BUZZER_PIN, 0);
     
     // Setup LED (inverted logic - HIGH = OFF for Xiao ESP32-S3)
@@ -1044,12 +1026,13 @@ void loop() {
             // Target lost - INSTANT LED OFF for maximum reactivity
             targetDetected = false;
             firstDetection = true; // Reset for next detection
-            stopProximityBeep(); // Ensure beep is off when target lost
             
-            // ULTRA-REACTIVE: Force LED off immediately when target lost
-            if (ledEnabled) {
-                digitalWrite(LED_PIN, HIGH); // LED OFF instantly
+            // Turn off beep and LED immediately
+            if (buzzerEnabled) {
+                ledcWrite(0, 0);
             }
+            ledOff();
+            isBeeping = false;
             
             Serial.println("TARGET LOST - Searching...");
         }
