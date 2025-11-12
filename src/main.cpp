@@ -6,6 +6,8 @@
 #include <NimBLEScan.h>
 #include <NimBLEAdvertisedDevice.h>
 #include <esp_wifi.h>
+#include <vector>
+#include <algorithm>
 
 // Hardware configuration
 #define BUZZER_PIN 3
@@ -53,6 +55,14 @@ unsigned long beepDuration = 50;  // 50ms beep duration for fast response
 
 // Serial output synchronization - avoid concurrent writes
 volatile bool newTargetDetected = false;
+
+// BLE Scan results storage
+struct ScannedDevice {
+    String mac;
+    int rssi;
+};
+std::vector<ScannedDevice> scanResults;
+bool scanInProgress = false;
 
 
 int calculateBeepInterval(int rssi) {
@@ -451,22 +461,6 @@ String generateConfigHTML() {
             position: relative;
             overflow-x: hidden;
         }
-        .ascii-background {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: -1;
-            opacity: 0.6;
-            color: #00ff00;
-            font-family: 'Courier New', monospace;
-            font-size: 8px;
-            line-height: 8px;
-            white-space: pre;
-            pointer-events: none;
-            overflow: hidden;
-        }
         .container {
             max-width: 700px; 
             margin: 0 auto; 
@@ -606,15 +600,181 @@ String generateConfigHTML() {
             color: #ffffff;
             border: 1px solid rgba(255, 20, 147, 0.2);
         }
+        .scan-btn {
+            background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
+            width: 100%;
+            margin: 0;
+            font-size: 18px;
+            padding: 16px;
+        }
+        .scan-btn:hover {
+            box-shadow: 0 8px 25px rgba(78, 205, 196, 0.4);
+        }
+        .scan-btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        #scanResults {
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            width: 100%;
+        }
+        .device-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            margin-bottom: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            transition: all 0.2s;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .device-item:hover {
+            background: rgba(78, 205, 196, 0.1);
+            border-color: #4ecdc4;
+        }
+        .device-mac {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            font-weight: 600;
+            color: #ffffff;
+            cursor: pointer;
+            user-select: all;
+            flex: 1 1 auto;
+            min-width: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 10px 12px;
+            border-radius: 6px;
+            transition: all 0.2s;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+            word-break: break-all;
+        }
+        .device-mac:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+        .device-mac:active {
+            transform: scale(0.98);
+        }
+        .device-rssi {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+            margin-left: auto;
+        }
+        @media (max-width: 768px) {
+            .device-item {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+            }
+            .device-mac {
+                width: 100%;
+                font-size: 12px;
+                padding: 12px 10px;
+            }
+            .device-rssi {
+                width: 100%;
+                justify-content: space-between;
+                margin-left: 0;
+            }
+            .copy-btn {
+                flex: 1;
+                padding: 10px;
+            }
+        }
+        .rssi-value {
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+        @media (max-width: 768px) {
+            .rssi-value {
+                font-size: 12px;
+                padding: 6px 10px;
+            }
+        }
+        .rssi-strong {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+            border: 1px solid #22c55e;
+        }
+        .rssi-medium {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+            border: 1px solid #fbbf24;
+        }
+        .rssi-weak {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+            border: 1px solid #ef4444;
+        }
+        .copy-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #ffffff;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        .copy-btn:hover {
+            transform: scale(1.05);
+        }
+        .scanning-indicator {
+            text-align: center;
+            padding: 20px;
+            color: #4ecdc4;
+            font-size: 14px;
+        }
+        .spinner {
+            border: 3px solid rgba(78, 205, 196, 0.1);
+            border-top: 3px solid #4ecdc4;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 10px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .no-devices {
+            text-align: center;
+            padding: 20px;
+            color: #a0a0a0;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
-    <div class="ascii-background">)html" + getASCIIArt() + R"html(</div>
     <div class="container">
         <h1>OUI-SPY FOXHUNT</h1>
         
-            <div class="status">
+        <div class="status">
             Enter the target MAC address for foxhunt tracking. Beep speed indicates proximity: LIGHTNING FAST when close, PAINFULLY SLOW when far.
+        </div>
+        
+        <div class="section">
+            <h3>BLE Device Scanner</h3>
+            <button type="button" class="scan-btn" id="scanBtn" onclick="startScan()">Scan for BLE Devices</button>
+            <div id="scanResults"></div>
+            <div class="help-text" style="margin-top: 15px;">
+                Click scan to discover nearby BLE devices. Click any MAC address button to auto-populate the target field below.
+            </div>
         </div>
         
         <form method="POST" action="/save">
@@ -652,6 +812,71 @@ String generateConfigHTML() {
             </div>
             
             <script>
+            function startScan() {
+                const scanBtn = document.getElementById('scanBtn');
+                const resultsDiv = document.getElementById('scanResults');
+                
+                scanBtn.disabled = true;
+                scanBtn.textContent = 'Scanning...';
+                
+                resultsDiv.innerHTML = '<div class="scanning-indicator"><div class="spinner"></div>Scanning for BLE devices...<br>This takes about 3 seconds</div>';
+                
+                // Start the scan and wait for results
+                fetch('/scan', { method: 'POST' })
+                    .then(response => response.json())
+                    .then(data => {
+                        scanBtn.disabled = false;
+                        scanBtn.textContent = 'Scan for BLE Devices';
+                        displayResults(data);
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        scanBtn.disabled = false;
+                        scanBtn.textContent = 'Scan for BLE Devices';
+                        resultsDiv.innerHTML = '<div class="no-devices">Error scanning. Please try again.</div>';
+                    });
+            }
+            
+            function displayResults(devices) {
+                const resultsDiv = document.getElementById('scanResults');
+                
+                if (devices.length === 0) {
+                    resultsDiv.innerHTML = '<div class="no-devices">No BLE devices found. Try scanning again.</div>';
+                    return;
+                }
+                
+                let html = '';
+                devices.forEach(device => {
+                    const rssiClass = device.rssi >= -60 ? 'rssi-strong' : device.rssi >= -80 ? 'rssi-medium' : 'rssi-weak';
+                    html += `
+                        <div class="device-item">
+                            <div class="device-mac" onclick="copyToTarget('${device.mac}')" title="Click to copy to target field">${device.mac}</div>
+                            <div class="device-rssi">
+                                <span class="rssi-value ${rssiClass}">${device.rssi} dBm</span>
+                                <button class="copy-btn" onclick="copyToTarget('${device.mac}')">Use This</button>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                resultsDiv.innerHTML = html;
+            }
+            
+            function copyToTarget(mac) {
+                const textarea = document.querySelector('textarea[name="targetMAC"]');
+                textarea.value = mac;
+                textarea.focus();
+                textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // Visual feedback
+                textarea.style.borderColor = '#4ecdc4';
+                textarea.style.boxShadow = '0 0 0 3px rgba(78, 205, 196, 0.3)';
+                setTimeout(() => {
+                    textarea.style.borderColor = '';
+                    textarea.style.boxShadow = '';
+                }, 1000);
+            }
+            
             function clearConfig() {
                 if (confirm('Are you sure you want to clear the target MAC? This action cannot be undone.')) {
                     document.querySelector('textarea[name="targetMAC"]').value = '';
@@ -684,8 +909,8 @@ String generateConfigHTML() {
                                 alert('Error during device reset. Check console.');
                             });
                     }
+                }
             }
-        }
     </script>
         </form>
     </div>
@@ -695,6 +920,36 @@ String generateConfigHTML() {
     
     return html;
 }
+
+// BLE Scan callback for discovery mode
+class ScanCallbacks: public NimBLEAdvertisedDeviceCallbacks {
+    void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
+        String mac = advertisedDevice->getAddress().toString().c_str();
+        mac.toUpperCase();
+        int rssi = advertisedDevice->getRSSI();
+        
+        // Check if device already in results
+        bool found = false;
+        for (auto& device : scanResults) {
+            if (device.mac == mac) {
+                // Update RSSI if stronger signal
+                if (rssi > device.rssi) {
+                    device.rssi = rssi;
+                }
+                found = true;
+                break;
+            }
+        }
+        
+        // Add new device
+        if (!found) {
+            ScannedDevice newDevice;
+            newDevice.mac = mac;
+            newDevice.rssi = rssi;
+            scanResults.push_back(newDevice);
+        }
+    }
+};
 
 // Web server handlers
 void startConfigMode() {
@@ -829,6 +1084,67 @@ void startConfigMode() {
         
         // Schedule device reset (non-blocking)
         deviceResetScheduled = millis() + 1000; // 1 second delay
+    });
+    
+    server.on("/scan", HTTP_POST, [](AsyncWebServerRequest *request){
+        lastConfigActivity = millis();
+        
+        if (scanInProgress) {
+            request->send(200, "application/json", "[]");
+            return;
+        }
+        
+        scanInProgress = true;
+        scanResults.clear();
+        
+        Serial.println("Starting BLE scan for device discovery...");
+        
+        try {
+            // Initialize BLE if not already initialized
+            if (!NimBLEDevice::getInitialized()) {
+                Serial.println("Initializing BLE...");
+                NimBLEDevice::init("");
+                delay(500);
+            }
+            
+            // Create scan object
+            NimBLEScan* pScan = NimBLEDevice::getScan();
+            if (pScan != nullptr) {
+                pScan->setAdvertisedDeviceCallbacks(new ScanCallbacks(), false);
+                pScan->setActiveScan(true);
+                pScan->setInterval(100);
+                pScan->setWindow(99);
+                pScan->setDuplicateFilter(false);
+                
+                Serial.println("Starting BLE scan...");
+                // Perform 3 second scan (shorter to avoid timeout)
+                pScan->start(3, false);
+                Serial.println("Scan complete");
+                
+                // Sort by RSSI (strongest first)
+                std::sort(scanResults.begin(), scanResults.end(), [](const ScannedDevice& a, const ScannedDevice& b) {
+                    return a.rssi > b.rssi;
+                });
+            }
+        } catch (...) {
+            Serial.println("BLE scan error");
+            scanInProgress = false;
+            request->send(200, "application/json", "[]");
+            return;
+        }
+        
+        // Build JSON response
+        String json = "[";
+        for (size_t i = 0; i < scanResults.size(); i++) {
+            if (i > 0) json += ",";
+            json += "{\"mac\":\"" + scanResults[i].mac + "\",\"rssi\":" + String(scanResults[i].rssi) + "}";
+        }
+        json += "]";
+        
+        Serial.println("Found " + String(scanResults.size()) + " devices");
+        
+        scanInProgress = false;
+        request->send(200, "application/json", json);
     });
     
     server.begin();
