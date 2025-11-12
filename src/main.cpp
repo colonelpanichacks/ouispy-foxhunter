@@ -1002,6 +1002,20 @@ String generateConfigHTML() {
                     }
                 }
             }
+            
+            // Load previous scan results on page load
+            window.addEventListener('DOMContentLoaded', function() {
+                fetch('/get-results')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data && data.length > 0) {
+                            displayResults(data);
+                        }
+                    })
+                    .catch(error => {
+                        console.log('No previous scan results available');
+                    });
+            });
     </script>
         </form>
     </div>
