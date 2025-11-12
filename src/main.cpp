@@ -8,6 +8,7 @@
 #include <esp_wifi.h>
 #include <vector>
 #include <algorithm>
+#include <cstring>
 
 // Hardware configuration
 #define BUZZER_PIN 3
@@ -16,8 +17,8 @@
 #define LED_PIN 21
 
 // Network configuration
-const char* AP_SSID = "snoopuntothem";
-const char* AP_PASSWORD = "astheysnoopuntous";
+const char* AP_SSID = "foxhunter";
+const char* AP_PASSWORD = "foxhunter";
 const unsigned long CONFIG_TIMEOUT = 20000; // 20 seconds
 
 // Operating modes
@@ -60,9 +61,47 @@ volatile bool newTargetDetected = false;
 struct ScannedDevice {
     String mac;
     int rssi;
+    String alias;
 };
 std::vector<ScannedDevice> scanResults;
 bool scanInProgress = false;
+
+// Alias management
+String getAlias(String mac) {
+    preferences.begin("aliases", true);
+    String alias = preferences.getString(mac.c_str(), "");
+    preferences.end();
+    return alias;
+}
+
+void setAlias(String mac, String alias) {
+    preferences.begin("aliases", false);
+    if (alias.length() > 0) {
+        preferences.putString(mac.c_str(), alias);
+    } else {
+        preferences.remove(mac.c_str());
+    }
+    preferences.end();
+}
+
+// Extract MAC address from "ALIAS (MAC)" format or return as-is
+String extractMAC(String input) {
+    input.trim();
+    
+    // Check if input contains parentheses (ALIAS (MAC) format)
+    int openParen = input.indexOf('(');
+    int closeParen = input.indexOf(')');
+    
+    if (openParen != -1 && closeParen != -1 && closeParen > openParen) {
+        // Extract MAC from parentheses
+        String mac = input.substring(openParen + 1, closeParen);
+        mac.trim();
+        return mac;
+    }
+    
+    // No parentheses, assume it's just a MAC address
+    return input;
+}
 
 
 int calculateBeepInterval(int rssi) {
@@ -448,7 +487,7 @@ String generateConfigHTML() {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>OUI-SPY FOXHUNT Configuration</title>
+    <title>OUI-SPY FOXHUNTER Configuration</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         * { box-sizing: border-box; }
@@ -599,6 +638,7 @@ String generateConfigHTML() {
             background: rgba(255, 20, 147, 0.05);
             color: #ffffff;
             border: 1px solid rgba(255, 20, 147, 0.2);
+            text-align: center;
         }
         .scan-btn {
             background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
@@ -640,10 +680,6 @@ String generateConfigHTML() {
             border-color: #4ecdc4;
         }
         .device-mac {
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-            font-weight: 600;
-            color: #ffffff;
             cursor: pointer;
             user-select: all;
             flex: 1 1 auto;
@@ -653,7 +689,6 @@ String generateConfigHTML() {
             border-radius: 6px;
             transition: all 0.2s;
             border: 1px solid rgba(255, 255, 255, 0.1);
-            text-align: center;
             word-break: break-all;
         }
         .device-mac:hover {
@@ -664,12 +699,48 @@ String generateConfigHTML() {
         .device-mac:active {
             transform: scale(0.98);
         }
+        .device-info {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        .device-info > div {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            font-weight: 600;
+            color: #ffffff;
+            text-align: center;
+        }
+        .device-alias {
+            font-size: 15px;
+            font-weight: 700;
+            color: #32cd32;
+            text-shadow: 0 0 10px rgba(50, 205, 50, 0.5);
+        }
+        .device-mac-small {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.6);
+            font-weight: 400;
+        }
         .device-rssi {
             display: flex;
             align-items: center;
             gap: 8px;
             flex-shrink: 0;
             margin-left: auto;
+        }
+        .edit-alias-btn {
+            background: rgba(78, 205, 196, 0.2);
+            color: #4ecdc4;
+            border: 1px solid #4ecdc4;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: all 0.2s;
+        }
+        .edit-alias-btn:hover {
+            background: rgba(78, 205, 196, 0.3);
         }
         @media (max-width: 768px) {
             .device-item {
@@ -686,10 +757,6 @@ String generateConfigHTML() {
                 width: 100%;
                 justify-content: space-between;
                 margin-left: 0;
-            }
-            .copy-btn {
-                flex: 1;
-                padding: 10px;
             }
         }
         .rssi-value {
@@ -720,19 +787,6 @@ String generateConfigHTML() {
             color: #ef4444;
             border: 1px solid #ef4444;
         }
-        .copy-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #ffffff;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: all 0.2s;
-        }
-        .copy-btn:hover {
-            transform: scale(1.05);
-        }
         .scanning-indicator {
             text-align: center;
             padding: 20px;
@@ -762,10 +816,10 @@ String generateConfigHTML() {
 </head>
 <body>
     <div class="container">
-        <h1>OUI-SPY FOXHUNT</h1>
+        <h1>OUI-SPY FOXHUNTER</h1>
         
         <div class="status">
-            Enter the target MAC address for foxhunt tracking. Beep speed indicates proximity: LIGHTNING FAST when close, PAINFULLY SLOW when far.
+            Scan for or enter the target MAC address for foxhunting. Beep/LED flash speed is related to RSSI of selected device.
         </div>
         
         <div class="section">
@@ -848,12 +902,21 @@ String generateConfigHTML() {
                 let html = '';
                 devices.forEach(device => {
                     const rssiClass = device.rssi >= -60 ? 'rssi-strong' : device.rssi >= -80 ? 'rssi-medium' : 'rssi-weak';
+                    const displayText = device.alias ? device.alias : device.mac;
+                    const subText = device.alias ? device.mac : '';
+                    const aliasParam = device.alias ? "'" + device.alias.replace(/'/g, "\\'") + "'" : "''";
+                    
                     html += `
                         <div class="device-item">
-                            <div class="device-mac" onclick="copyToTarget('${device.mac}')" title="Click to copy to target field">${device.mac}</div>
+                            <div class="device-mac" onclick="copyToTarget('${device.mac}', ${aliasParam})" title="Click to use as target">
+                                <div class="device-info">
+                                    ${device.alias ? `<div class="device-alias">${device.alias}</div>` : ''}
+                                    <div class="${device.alias ? 'device-mac-small' : ''}">${device.mac}</div>
+                                </div>
+                            </div>
                             <div class="device-rssi">
                                 <span class="rssi-value ${rssiClass}">${device.rssi} dBm</span>
-                                <button class="copy-btn" onclick="copyToTarget('${device.mac}')">Use This</button>
+                                <button class="edit-alias-btn" onclick="editAlias('${device.mac}', '${device.alias || ''}')">Alias</button>
                             </div>
                         </div>
                     `;
@@ -862,9 +925,37 @@ String generateConfigHTML() {
                 resultsDiv.innerHTML = html;
             }
             
-            function copyToTarget(mac) {
+            function editAlias(mac, currentAlias) {
+                const newAlias = prompt('Enter alias for ' + mac + '\\n(Leave empty to remove alias):', currentAlias);
+                if (newAlias !== null) {
+                    fetch('/set-alias', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                        body: 'mac=' + encodeURIComponent(mac) + '&alias=' + encodeURIComponent(newAlias)
+                    })
+                    .then(response => response.text())
+                    .then(data => {
+                        // Update alias in current results without re-scanning
+                        fetch('/get-results')
+                            .then(response => response.json())
+                            .then(devices => {
+                                displayResults(devices);
+                            })
+                            .catch(error => {
+                                console.error('Error:', error);
+                            });
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Error saving alias');
+                    });
+                }
+            }
+            
+            function copyToTarget(mac, alias) {
                 const textarea = document.querySelector('textarea[name="targetMAC"]');
-                textarea.value = mac;
+                // Format as "ALIAS (MAC)" if alias exists, otherwise just "MAC"
+                textarea.value = alias ? alias + ' (' + mac + ')' : mac;
                 textarea.focus();
                 textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 
@@ -936,6 +1027,8 @@ class ScanCallbacks: public NimBLEAdvertisedDeviceCallbacks {
                 if (rssi > device.rssi) {
                     device.rssi = rssi;
                 }
+                // Refresh alias in case it was changed
+                device.alias = getAlias(mac);
                 found = true;
                 break;
             }
@@ -946,6 +1039,7 @@ class ScanCallbacks: public NimBLEAdvertisedDeviceCallbacks {
             ScannedDevice newDevice;
             newDevice.mac = mac;
             newDevice.rssi = rssi;
+            newDevice.alias = getAlias(mac);
             scanResults.push_back(newDevice);
         }
     }
@@ -960,7 +1054,23 @@ void startConfigMode() {
     Serial.println("Initializing WiFi AP...");
     
     WiFi.mode(WIFI_AP);
-    WiFi.softAP(AP_SSID, AP_PASSWORD);
+
+    bool apStarted = false;
+    if (AP_PASSWORD != nullptr && std::strlen(AP_PASSWORD) >= 8) {
+        apStarted = WiFi.softAP(AP_SSID, AP_PASSWORD);
+    } else {
+        Serial.println("AP password too short (<8 chars) or not set. Starting open AP with custom SSID.");
+    }
+
+    if (!apStarted) {
+        apStarted = WiFi.softAP(AP_SSID);
+    }
+
+    if (!apStarted) {
+        Serial.println("Failed to start Access Point!");
+    } else {
+        WiFi.softAPsetHostname("ouispy-foxhunter");
+    }
     delay(2000); // Allow AP to fully initialize
     
     // Set timing AFTER AP initialization
@@ -982,7 +1092,10 @@ void startConfigMode() {
         lastConfigActivity = millis();
         
         if (request->hasParam("targetMAC", true)) {
-            targetMAC = request->getParam("targetMAC", true)->value();
+            String rawInput = request->getParam("targetMAC", true)->value();
+            
+            // Extract MAC from "ALIAS (MAC)" format if needed
+            targetMAC = extractMAC(rawInput);
             targetMAC.trim();
             targetMAC.toUpperCase(); // Ensure consistent case for comparison
             
@@ -990,7 +1103,8 @@ void startConfigMode() {
             buzzerEnabled = request->hasParam("buzzerEnabled", true);
             ledEnabled = request->hasParam("ledEnabled", true);
             
-            Serial.println("Received target MAC: " + targetMAC);
+            Serial.println("Received input: " + rawInput);
+            Serial.println("Extracted target MAC: " + targetMAC);
             Serial.println("Buzzer enabled: " + String(buzzerEnabled ? "Yes" : "No"));
             Serial.println("LED enabled: " + String(ledEnabled ? "Yes" : "No"));
             saveConfiguration();
@@ -1137,13 +1251,66 @@ void startConfigMode() {
         String json = "[";
         for (size_t i = 0; i < scanResults.size(); i++) {
             if (i > 0) json += ",";
-            json += "{\"mac\":\"" + scanResults[i].mac + "\",\"rssi\":" + String(scanResults[i].rssi) + "}";
+            json += "{\"mac\":\"" + scanResults[i].mac + "\",\"rssi\":" + String(scanResults[i].rssi);
+            if (scanResults[i].alias.length() > 0) {
+                String escapedAlias = scanResults[i].alias;
+                escapedAlias.replace("\"", "\\\"");
+                json += ",\"alias\":\"" + escapedAlias + "\"";
+            }
+            json += "}";
         }
         json += "]";
         
         Serial.println("Found " + String(scanResults.size()) + " devices");
         
         scanInProgress = false;
+        request->send(200, "application/json", json);
+    });
+    
+    server.on("/set-alias", HTTP_POST, [](AsyncWebServerRequest *request){
+        lastConfigActivity = millis();
+        
+        if (request->hasParam("mac", true) && request->hasParam("alias", true)) {
+            String mac = request->getParam("mac", true)->value();
+            String alias = request->getParam("alias", true)->value();
+            
+            mac.toUpperCase();
+            alias.trim();
+            
+            setAlias(mac, alias);
+            
+            // Update alias in current scan results
+            for (auto& device : scanResults) {
+                if (device.mac == mac) {
+                    device.alias = alias;
+                    break;
+                }
+            }
+            
+            Serial.println("Alias set: " + mac + " = " + alias);
+            request->send(200, "text/plain", "OK");
+        } else {
+            request->send(400, "text/plain", "Missing parameters");
+        }
+    });
+    
+    server.on("/get-results", HTTP_GET, [](AsyncWebServerRequest *request){
+        lastConfigActivity = millis();
+        
+        // Return current scan results with updated aliases
+        String json = "[";
+        for (size_t i = 0; i < scanResults.size(); i++) {
+            if (i > 0) json += ",";
+            json += "{\"mac\":\"" + scanResults[i].mac + "\",\"rssi\":" + String(scanResults[i].rssi);
+            if (scanResults[i].alias.length() > 0) {
+                String escapedAlias = scanResults[i].alias;
+                escapedAlias.replace("\"", "\\\"");
+                json += ",\"alias\":\"" + escapedAlias + "\"";
+            }
+            json += "}";
+        }
+        json += "]";
+        
         request->send(200, "application/json", json);
     });
     
@@ -1233,6 +1400,10 @@ void setup() {
     digitalWrite(LED_PIN, HIGH);
     
     singleBeep(); // Startup test beep
+    
+    // Initialize WiFi FIRST before setting MAC
+    WiFi.mode(WIFI_MODE_NULL);
+    delay(100);
     
     // STEALTH MODE: Full MAC randomization
     uint8_t newMAC[6];

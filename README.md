@@ -17,17 +17,20 @@ Precision BLE proximity tracker for radio direction finding with real-time audio
 
 ## Quick Start
 
-1. **Power on device** - Creates WiFi AP `snoopuntothem` (password: `astheysnoopuntous`)
+1. **Power on device** - Creates WiFi AP `foxhunter` (password: `foxhunter`)
 2. **Connect and configure** - Navigate to `http://192.168.4.1`
-3. **Enter target MAC** - Format: `XX:XX:XX:XX:XX:XX`
-4. **Save configuration** - Device switches to tracking mode
+3. **Scan or enter target MAC** - Use built-in BLE scanner or manual entry
+4. **Optional: Alias devices** - Name your targets for easy identification
+5. **Save configuration** - Device switches to tracking mode
 
 ## Features
 
 ### Tracking System
 - Single MAC address targeting
+- **Built-in BLE Scanner:** Discover nearby devices instantly
+- **MAC Address Aliasing:** Name your devices with persistent labels
 - Real-time RSSI-based proximity beeping
-- Persistent configuration storage
+- Persistent configuration storage (NVS)
 - Automatic mode switching
 
 ### Audio & Visual Feedback
@@ -65,11 +68,12 @@ python3 -m platformio run --target upload
 
 ### Setup Process
 1. Device starts in configuration mode
-2. Connect to `snoopuntothem` WiFi network
+2. Connect to `foxhunter` WiFi network (password: `foxhunter`)
 3. Access web portal at `http://192.168.4.1`
-4. Enter target MAC address
-5. Configure audio/visual settings (buzzer & LED toggles)
-6. Configuration saves automatically with persistent settings
+4. **Use BLE Scanner** or manually enter target MAC address
+5. **Optional:** Assign alias to target device (persists across reboots)
+6. Configure audio/visual settings (buzzer & LED toggles)
+7. Configuration saves automatically with persistent settings
 
 ### Tracking Mode
 1. BLE scanning starts with ready signal (audio + LED)
@@ -87,12 +91,17 @@ python3 -m platformio run --target upload
 ## Web Interface
 
 Clean, professional configuration portal with:
+- **BLE Device Scanner:** 3-second scan with RSSI display
+- **Device Organization:** Results sorted by signal strength
+- **MAC Address Aliasing:** Persistent device naming with NVS storage
+- **One-Click Target Selection:** Click any MAC to populate target field
+- **Alias Display:** Shows `ALIAS (MAC)` format in target field
 - MAC address validation
 - **Audio & Visual Settings:** Independent buzzer and LED toggles
 - Configuration confirmation screen
 - 5-second automatic mode switch
 - Device reset functionality
-- **Persistent Settings:** Preferences survive reboots
+- **Persistent Settings:** Preferences and aliases survive reboots
 
 ## Serial Output
 
@@ -112,8 +121,11 @@ RSSI: -45 dBm
 ## Troubleshooting
 
 **No WiFi AP:** Wait 30 seconds after power-on
-**No web portal:** Ensure connected to `snoopuntothem`, disable mobile data
-**No target detection:** Verify device is advertising BLE
+**No web portal:** Ensure connected to `foxhunter`, disable mobile data
+**No target detection:** Verify device is advertising BLE, use scanner to confirm
+**Scanner shows no devices:** Ensure BLE devices are nearby and advertising
+**Alias not persisting:** NVS storage saves automatically, survives reboots
+**Tracking not working:** Ensure target field shows correct MAC format (extracted from alias automatically)
 **Intermittent beeping:** Target may use MAC randomization
 
 ## Applications
@@ -126,10 +138,12 @@ RSSI: -45 dBm
 ## Technical Specifications
 
 - **Platform:** ESP32-S3
-- **BLE scanning:** Continuous, aggressive parameters
+- **BLE scanning:** Continuous, aggressive parameters (3-second discovery scans)
 - **Audio system:** PWM-based buzzer control (GPIO3)
 - **Visual system:** Onboard LED control (GPIO21, inverted logic)
-- **Storage:** NVS flash memory with persistent settings
+- **Storage:** NVS flash memory with persistent settings and device aliases
+- **Web UI:** BLE scanner with RSSI-sorted results and one-click targeting
+- **Alias System:** NVS-based persistent device naming across reboots
 - **Power optimization:** Dual-core processing
 - **Response time:** Ultra-reactive with instant LED feedback
 
