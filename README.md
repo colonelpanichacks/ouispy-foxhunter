@@ -149,4 +149,4 @@ OUI-SPY Foxhunter is part of the OUI-SPY firmware family:
 
 ## License
 
-Open source project. Modifications welcome.
+MIT, see [LICENSE](LICENSE).
